@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Autodesk.Revit.ApplicationServices;
 
 namespace CreationModel
 {
@@ -19,8 +20,45 @@ namespace CreationModel
             var walls = CreateWalls(doc);
             AddDoor(doc, walls[0]);
             AddWindows(doc, walls);
+            AddRoof(doc, walls[3]);
 
             return Result.Succeeded;
+        }
+        //метод создания крыши
+        private void AddRoof(Document doc, Wall wall)
+        {
+            Level level2 = GetLevels(doc)
+                .Where(x => x.Name.Equals("Уровень 2"))
+                .FirstOrDefault();
+            //получаем тип крыши
+            RoofType roofType = new FilteredElementCollector(doc)
+                .OfClass(typeof(RoofType))
+                .OfType<RoofType>()
+                .Where(x => x.Name.Equals("Типовой - 400мм"))
+                .Where(x => x.FamilyName.Equals("Базовая крыша"))
+                .FirstOrDefault();
+            //задаем смещение контура крыши
+            double wallWidth = wall.Width;
+            double dt = wallWidth / 2;
+            double dz = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM).AsDouble();
+            //находим точки контура выдавливания
+            LocationCurve locationCurve = wall.Location as LocationCurve;
+            XYZ point1 = locationCurve.Curve.GetEndPoint(0) + new XYZ(-dt, dt, dz);
+            XYZ point2 = locationCurve.Curve.GetEndPoint(1) + new XYZ(-dt, -dt, dz);
+            XYZ delta = point2 - point1;
+            XYZ midPoint = point1 + delta / 2 + new XYZ(0, 0, UnitUtils.ConvertToInternalUnits(1000, UnitTypeId.Millimeters));
+            //создаем линии контура выдавливания
+            CurveArray footprint = new CurveArray();
+            footprint.Append(Line.CreateBound(point1, midPoint));
+            footprint.Append(Line.CreateBound(midPoint, point2));
+
+            Transaction transaction = new Transaction(doc, "Построение крыши");
+            transaction.Start();
+            //создаем опорную плоскость
+            ReferencePlane plane = doc.Create.NewReferencePlane(point1, point1 + new XYZ(0, 0, -1), point2 - point1, doc.ActiveView);
+            //создаем крышу
+            doc.Create.NewExtrusionRoof(footprint, plane, level2, roofType, 0, UnitUtils.ConvertToInternalUnits(10000, UnitTypeId.Millimeters) + wallWidth);
+            transaction.Commit();
         }
 
         //метод для получения списка уровней
@@ -128,16 +166,16 @@ namespace CreationModel
             {
                 if (wall == walls[0])
                     continue;
-            //получение точки вставки окна
-            LocationCurve hostCurve = wall.Location as LocationCurve;
-            XYZ point1 = hostCurve.Curve.GetEndPoint(0);
-            XYZ point2 = hostCurve.Curve.GetEndPoint(1);
-            XYZ point = (point1 + point2) / 2;
-            //активируем тип
-            if (!windowType.IsActive)
-                windowType.Activate();
-            //создаем окно
-            doc.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
+                //получение точки вставки окна
+                LocationCurve hostCurve = wall.Location as LocationCurve;
+                XYZ point1 = hostCurve.Curve.GetEndPoint(0);
+                XYZ point2 = hostCurve.Curve.GetEndPoint(1);
+                XYZ point = (point1 + point2) / 2;
+                //активируем тип
+                if (!windowType.IsActive)
+                    windowType.Activate();
+                //создаем окно
+                doc.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
             }
 
             transaction.Commit();
