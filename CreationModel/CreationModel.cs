@@ -1,5 +1,6 @@
 ﻿using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 using System;
 using System.Collections.Generic;
@@ -16,12 +17,14 @@ namespace CreationModel
         {
             Document doc = commandData.Application.ActiveUIDocument.Document;
             var walls = CreateWalls(doc);
+            AddDoor(doc, walls[0]);
+            AddWindows(doc, walls);
 
             return Result.Succeeded;
         }
 
         //метод для получения списка уровней
-        public List<Level> GetLevels (Document doc)
+        public List<Level> GetLevels(Document doc)
         {
             var listLevel = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level))
@@ -31,10 +34,10 @@ namespace CreationModel
         }
 
         //метод для получения точек построения стен
-        public List<XYZ> GetPoints (double x, double y)
+        public List<XYZ> GetPoints(double x, double y)
         {
-            double width = UnitUtils.ConvertFromInternalUnits(x, UnitTypeId.Millimeters);
-            double depth = UnitUtils.ConvertFromInternalUnits(y, UnitTypeId.Millimeters);
+            double width = UnitUtils.ConvertToInternalUnits(x, UnitTypeId.Millimeters);
+            double depth = UnitUtils.ConvertToInternalUnits(y, UnitTypeId.Millimeters);
             double dx = width / 2;
             double dy = depth / 2;
 
@@ -51,19 +54,19 @@ namespace CreationModel
         //метод для построения стен
         public List<Wall> CreateWalls(Document doc)
         {
+            //получаем уровнь 1
+            Level level1 = GetLevels(doc)
+                .Where(x => x.Name.Equals("Уровень 1"))
+                .FirstOrDefault();
+            //получаем уровнь 2
+            Level level2 = GetLevels(doc)
+                .Where(x => x.Name.Equals("Уровень 2"))
+                .FirstOrDefault();
             Transaction transaction = new Transaction(doc, "Построение стен");
             transaction.Start();
             List<Wall> walls = new List<Wall>();//пустой список стен, куда добавляем создаваемые стены 
             for (int i = 0; i < 4; i++)
             {
-                //получаем уровнь 1
-                Level level1 = GetLevels(doc)
-                    .Where(x => x.Name.Equals("Уровень 1"))
-                    .FirstOrDefault();
-                //получаем уровнь 2
-                Level level2 = GetLevels(doc)
-                    .Where(x => x.Name.Equals("Уровень 2"))
-                    .FirstOrDefault();
                 //получаем точки для построения
                 List<XYZ> points = GetPoints(10000, 5000);
                 Line line = Line.CreateBound(points[i], points[i + 1]);//создаем линию, по которой будет строится стена
@@ -74,5 +77,71 @@ namespace CreationModel
             transaction.Commit();
             return walls;
         }
+        //метод для создания двери
+        public void AddDoor(Document doc, Wall wall)
+        {
+            Level level1 = GetLevels(doc)
+            .Where(x => x.Name.Equals("Уровень 1"))
+            .FirstOrDefault();
+
+            Transaction transaction = new Transaction(doc, "Добавление двери");
+            transaction.Start();
+
+            FamilySymbol doorType = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .OfCategory(BuiltInCategory.OST_Doors)
+                .OfType<FamilySymbol>()
+                .Where(x => x.Name.Equals("0915 x 2032 мм"))
+                .Where(x => x.FamilyName.Equals("Одиночные-Щитовые"))
+                .FirstOrDefault();
+            //получение точки вставки двери
+            LocationCurve hostCurve = wall.Location as LocationCurve;
+            XYZ point1 = hostCurve.Curve.GetEndPoint(0);
+            XYZ point2 = hostCurve.Curve.GetEndPoint(1);
+            XYZ point = (point1 + point2) / 2;
+            //активируем тип
+            if (!doorType.IsActive)
+                doorType.Activate();
+            //создаем дверь
+            doc.Create.NewFamilyInstance(point, doorType, wall, level1, StructuralType.NonStructural);
+
+            transaction.Commit();
+        }
+        //метод для создания окон
+        public void AddWindows(Document doc, List<Wall> walls)
+        {
+            Level level1 = GetLevels(doc)
+            .Where(x => x.Name.Equals("Уровень 1"))
+            .FirstOrDefault();
+
+            Transaction transaction = new Transaction(doc, "Добавление окон");
+            transaction.Start();
+
+            FamilySymbol windowType = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .OfCategory(BuiltInCategory.OST_Windows)
+                .OfType<FamilySymbol>()
+                .Where(x => x.Name.Equals("0406 x 0610 мм"))
+                .Where(x => x.FamilyName.Equals("Фиксированные"))
+                .FirstOrDefault();
+            foreach (var wall in walls)
+            {
+                if (wall == walls[0])
+                    continue;
+            //получение точки вставки двери
+            LocationCurve hostCurve = wall.Location as LocationCurve;
+            XYZ point1 = hostCurve.Curve.GetEndPoint(0);
+            XYZ point2 = hostCurve.Curve.GetEndPoint(1);
+            XYZ point = (point1 + point2) / 2;
+            //активируем тип
+            if (!windowType.IsActive)
+                windowType.Activate();
+            //создаем дверь
+            doc.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
+            }
+
+            transaction.Commit();
+        }
+
     }
 }
