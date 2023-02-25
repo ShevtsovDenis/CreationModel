@@ -128,7 +128,7 @@ namespace CreationModel
             {
                 if (wall == walls[0])
                     continue;
-            //получение точки вставки двери
+            //получение точки вставки окна
             LocationCurve hostCurve = wall.Location as LocationCurve;
             XYZ point1 = hostCurve.Curve.GetEndPoint(0);
             XYZ point2 = hostCurve.Curve.GetEndPoint(1);
@@ -136,7 +136,7 @@ namespace CreationModel
             //активируем тип
             if (!windowType.IsActive)
                 windowType.Activate();
-            //создаем дверь
+            //создаем окно
             doc.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
             }
 
